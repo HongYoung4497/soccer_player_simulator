@@ -8,10 +8,13 @@ import {
 } from 'react'
 import type { AuthMode, CareerSave, PlayerProfile, TrainingFocus } from './types'
 import {
+  archiveToSquad,
   clearSave,
+  clearSquad,
   createInitialSave,
   loadPendingAuth,
   loadSave,
+  loadSquad,
   persistPendingAuth,
   persistSave,
   SAMPLE_LOAN,
@@ -20,6 +23,7 @@ import {
 
 interface GameContextValue {
   save: CareerSave | null
+  squad: CareerSave[]
   pendingAuth: AuthMode
   lastTraining: TrainingFocus | null
   setPendingAuth: (mode: AuthMode) => void
@@ -29,7 +33,8 @@ interface GameContextValue {
   runQuarterStub: (focus: TrainingFocus) => void
   acceptRoleOffer: (accept: boolean) => void
   acceptLoan: (accept: boolean) => void
-  acknowledgeInjury: () => void
+  /** 이벤트 큐 종료 시 분기 진행. Q4면 season-wrap으로 */
+  completeEventQueue: () => 'season' | 'season-wrap'
   wrapSeasonStub: () => void
   retireAndStore: () => void
   simulateConflictLogin: (mode: 'google' | 'kakao') => boolean
@@ -41,6 +46,7 @@ const GameContext = createContext<GameContextValue | null>(null)
 
 export function GameProvider({ children }: { children: ReactNode }) {
   const [save, setSave] = useState<CareerSave | null>(() => loadSave())
+  const [squad, setSquad] = useState<CareerSave[]>(() => loadSquad())
   const [pendingAuth, setPendingAuthState] = useState<AuthMode>(
     () => loadPendingAuth(),
   )
@@ -60,6 +66,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const startCareer = useCallback(
     (player: PlayerProfile) => {
       const mode = pendingAuth ?? 'guest'
+      // 활성 커리어만 교체 — 선수단(squad) 아카이브는 유지
       commit(createInitialSave(player, mode))
     },
     [commit, pendingAuth],
@@ -92,8 +99,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         ...prev,
         careerApps: prev.careerApps + 7,
         careerGoals: prev.careerGoals + 1,
-        lastQuarterSummary:
-          '출전 7 (선발 2) · 골 1 · 도움 0 · 평균 평점 6.4 · 팀 5위권 · 왕실 방패 32강 대기',
+        lastQuarterSummary: `${prev.quarterIndex}분기 · 출전 7 (선발 2) · 골 1 · 도움 0 · 평균 평점 6.4 · 팀 5위권 · 왕실 방패 32강 대기`,
       }))
     },
     [touchSave],
@@ -119,8 +125,23 @@ export function GameProvider({ children }: { children: ReactNode }) {
     [touchSave],
   )
 
-  const acknowledgeInjury = useCallback(() => {
-    /* 셸 스텁 — 상태만 유지 */
+  const completeEventQueue = useCallback((): 'season' | 'season-wrap' => {
+    let nextRoute: 'season' | 'season-wrap' = 'season'
+    setSave((prev) => {
+      if (!prev) return prev
+      if (prev.quarterIndex >= 4) {
+        nextRoute = 'season-wrap'
+        return prev
+      }
+      const advanced: CareerSave = {
+        ...prev,
+        quarterIndex: (prev.quarterIndex + 1) as 1 | 2 | 3 | 4,
+        savedAt: new Date().toISOString(),
+      }
+      persistSave(advanced)
+      return advanced
+    })
+    return nextRoute
   }, [])
 
   const wrapSeasonStub = useCallback(() => {
@@ -140,22 +161,33 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, [touchSave])
 
   const retireAndStore = useCallback(() => {
-    touchSave((prev) => ({ ...prev, retired: true }))
-  }, [touchSave])
+    if (!save) return
+    const retired: CareerSave = {
+      ...save,
+      retired: true,
+      savedAt: new Date().toISOString(),
+    }
+    // 선수단은 별도 localStorage 키 — 새 인생이 활성 세이브를 덮어도 보관 유지
+    setSquad(archiveToSquad(retired))
+    persistSave(retired)
+    setSave(retired)
+  }, [save])
 
   /** 충돌 화면 데모: 이미 게스트 세이브가 있으면 conflict로 유도 */
-  const simulateConflictLogin = useCallback((mode: 'google' | 'kakao') => {
-    const existing = loadSave()
-    setPendingAuth(mode)
-    return Boolean(existing && !existing.retired)
-  }, [])
+  const simulateConflictLogin = useCallback(
+    (mode: 'google' | 'kakao') => {
+      const existing = loadSave()
+      setPendingAuth(mode)
+      return Boolean(existing && !existing.retired)
+    },
+    [setPendingAuth],
+  )
 
   const resolveConflict = useCallback(
     (keep: 'device' | 'account') => {
       if (keep === 'device' && save) {
         commit({ ...save, authMode: pendingAuth ?? 'google' })
       }
-      // account keep: 셸에서는 게스트를 비우고 타이틀로 — 서버 세이브 없음
       if (keep === 'account') {
         clearSave()
         setSave(null)
@@ -166,7 +198,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const resetAll = useCallback(() => {
     clearSave()
+    clearSquad()
     setSave(null)
+    setSquad([])
     persistPendingAuth(null)
     setPendingAuthState(null)
     setLastTraining(null)
@@ -175,6 +209,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       save,
+      squad,
       pendingAuth,
       lastTraining,
       setPendingAuth,
@@ -184,7 +219,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       runQuarterStub,
       acceptRoleOffer,
       acceptLoan,
-      acknowledgeInjury,
+      completeEventQueue,
       wrapSeasonStub,
       retireAndStore,
       simulateConflictLogin,
@@ -193,15 +228,17 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }),
     [
       save,
+      squad,
       pendingAuth,
       lastTraining,
+      setPendingAuth,
       startCareer,
       continueCareer,
       touchSave,
       runQuarterStub,
       acceptRoleOffer,
       acceptLoan,
-      acknowledgeInjury,
+      completeEventQueue,
       wrapSeasonStub,
       retireAndStore,
       simulateConflictLogin,

@@ -2,7 +2,6 @@ import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { GuestSaveChip } from '../components/GuestSaveChip'
 import { useGame } from '../gameContext'
-import { loadSave } from '../storage'
 
 export function RetireScreen() {
   const navigate = useNavigate()
@@ -48,30 +47,41 @@ export function RetireScreen() {
 
 export function SquadScreen() {
   const navigate = useNavigate()
-  const stored = loadSave()
+  const { squad } = useGame()
 
   return (
     <main className="screen screen--flow">
       <h1 className="screen-heading">나의 선수단</h1>
       <p className="essay">끝난 인생도, 다시 펼칠 수 있습니다. 과금 슬롯은 없습니다.</p>
 
-      {stored ? (
-        <div className="soft-block">
-          <p>
-            {stored.player.name} — #{stored.player.shirtNumber}{' '}
-            {stored.player.position}
-            {stored.retired ? ' · 은퇴' : ' · 현역'}
-          </p>
-          <button type="button" className="btn btn--ghost" disabled>
-            커리어 다시 읽기 (스텁)
-          </button>
-        </div>
+      {squad.length > 0 ? (
+        <ul className="history-list" style={{ listStyle: 'none', paddingLeft: 0 }}>
+          {squad.map((entry) => (
+            <li key={`${entry.player.name}-${entry.savedAt}`} className="soft-block">
+              <p>
+                {entry.player.name} — #{entry.player.shirtNumber}{' '}
+                {entry.player.position} · 은퇴
+              </p>
+              <p className="muted-line">
+                {entry.seasonYear}시즌까지 · 통산 출전 {entry.careerApps} · 골{' '}
+                {entry.careerGoals}
+              </p>
+              <button type="button" className="btn btn--ghost" disabled>
+                커리어 다시 읽기 (스텁)
+              </button>
+            </li>
+          ))}
+        </ul>
       ) : (
         <p className="muted-line">보관된 선수가 없습니다.</p>
       )}
 
       <div className="cta-stack">
-        <button type="button" className="btn btn--primary" onClick={() => navigate('/create')}>
+        <button
+          type="button"
+          className="btn btn--primary"
+          onClick={() => navigate('/create')}
+        >
           새 인생
         </button>
         <button type="button" className="btn btn--text" onClick={() => navigate('/')}>

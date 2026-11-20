@@ -211,7 +211,7 @@ export function EventLoanScreen() {
 
 export function EventInjuryScreen() {
   const navigate = useNavigate()
-  const { acknowledgeInjury } = useGame()
+  const { completeEventQueue } = useGame()
 
   return (
     <main className="screen screen--flow">
@@ -224,8 +224,8 @@ export function EventInjuryScreen() {
         type="button"
         className="btn btn--primary"
         onClick={() => {
-          acknowledgeInjury()
-          navigate('/app/season')
+          const next = completeEventQueue()
+          navigate(next === 'season-wrap' ? '/season-wrap' : '/app/season')
         }}
       >
         알겠다
