@@ -111,4 +111,60 @@ describe('resolveQuarter', () => {
     expect(nextSave.historyLines.some((l) => l.includes('2027'))).toBe(true)
     expect(nextSave.seasonAccum.apps).toBe(0)
   })
+
+  it('excludes zero-appearance quarters from season rating average', () => {
+    const played = baseSave({ careerSeed: 'rating-played' })
+    const afterPlay = resolveQuarter(played, { trainingFocus: '결정력' })
+    expect(afterPlay.nextSave.seasonAccum.ratingCount).toBe(1)
+    expect(afterPlay.nextSave.seasonAccum.ratingSum).toBe(
+      afterPlay.stats.avgRating,
+    )
+
+    const injured = {
+      ...afterPlay.nextSave,
+      injury: { type: 'muscle' as const, quartersLeft: 1 },
+      careerSeed: 'rating-injured',
+      quarterIndex: 2 as const,
+    }
+    const afterInjury = resolveQuarter(injured, { trainingFocus: '재활·컨디션' })
+    expect(afterInjury.stats.apps).toBe(0)
+    expect(afterInjury.nextSave.seasonAccum.ratingCount).toBe(1)
+    expect(afterInjury.nextSave.seasonAccum.ratingSum).toBe(
+      afterPlay.stats.avgRating,
+    )
+  })
+
+  it('cup schedule can reach winner within four unbeaten quarters', () => {
+    // 강제 전진: 높은 ovr·출전으로 승률 보너스 — 시드 탐색으로 무패 컵 런 확인
+    let foundWinner = false
+    for (let seed = 0; seed < 80 && !foundWinner; seed++) {
+      let save = baseSave({
+        careerSeed: `cup-run-${seed}`,
+        role: 'key',
+        fitness: 95,
+        player: {
+          ...baseSave().player,
+          ovr: 82,
+        },
+      })
+      let alive = true
+      for (const q of [1, 2, 3, 4] as const) {
+        save = { ...save, quarterIndex: q }
+        const { nextSave, team } = resolveQuarter(save, {
+          trainingFocus: '지구력',
+        })
+        save = nextSave
+        if (team.cupRoundAfter === 'eliminated') {
+          alive = false
+          break
+        }
+        if (team.cupRoundAfter === 'winner') {
+          foundWinner = true
+          break
+        }
+      }
+      if (alive && save.cupRound === 'winner') foundWinner = true
+    }
+    expect(foundWinner).toBe(true)
+  })
 })

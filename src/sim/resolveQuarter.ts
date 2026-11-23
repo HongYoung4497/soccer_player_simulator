@@ -21,6 +21,7 @@ import {
 } from './essay'
 import {
   CUP_ROUNDS,
+  CUP_ROUNDS_PER_QUARTER,
   EVENT_RATES,
   EVENT_SORT_ORDER,
   GROWTH,
@@ -132,21 +133,25 @@ function resolveMinutes(
   starts = clamp(starts, 0, apps)
   const subApps = Math.max(0, apps - starts)
 
-  // Cup: 진행 중이면 최대 1경기
+  // Cup: 분기 스케줄만큼 (탈락/우승 전이면) — 최대 2
   let minutesCup = 0
   let cupApps = 0
   let cupStarts = 0
-  const cupActive =
+  const scheduled = CUP_ROUNDS_PER_QUARTER[save.quarterIndex] ?? 1
+  const playCup =
     save.cupRound !== 'eliminated' &&
     save.cupRound !== 'winner' &&
-    save.cupRound !== 'not_entered'
-  if (cupActive || save.cupRound === 'not_entered' || save.cupRound === 'round_of_64') {
-    // Q1부터 참가 가정
-    const playCup = save.cupRound !== 'eliminated' && save.cupRound !== 'winner'
-    if (playCup && ratio > 0.1) {
-      cupApps = 1
-      cupStarts = rng.chance(startShare) ? 1 : 0
-      minutesCup = cupStarts ? rng.int(70, 90) : rng.int(20, 45)
+    ratio > 0.1
+  if (playCup) {
+    cupApps = scheduled
+    cupStarts = Math.min(
+      cupApps,
+      [...Array(cupApps)].filter(() => rng.chance(startShare)).length ||
+        (rng.chance(startShare) ? 1 : 0),
+    )
+    minutesCup = 0
+    for (let i = 0; i < cupApps; i++) {
+      minutesCup += i < cupStarts ? rng.int(70, 90) : rng.int(20, 45)
     }
   }
 
@@ -162,12 +167,30 @@ function resolveMinutes(
   }
 }
 
+function advanceCupOnce(
+  current: CupRoundStatus,
+  advance: boolean,
+): { round: CupRoundStatus; won: boolean } {
+  if (current === 'eliminated' || current === 'winner') {
+    return { round: current, won: current === 'winner' }
+  }
+  if (!advance) return { round: 'eliminated', won: false }
+  if (current === 'not_entered') return { round: 'round_of_64', won: false }
+  if (current === 'final') return { round: 'winner', won: true }
+  const idx = CUP_ROUNDS.indexOf(current as (typeof CUP_ROUNDS)[number])
+  if (idx < 0) return { round: current, won: false }
+  return {
+    round: CUP_ROUNDS[Math.min(idx + 1, CUP_ROUNDS.length - 1)]!,
+    won: false,
+  }
+}
+
 /** Step 2 — 팀 블록 (플레이어 리그 상세 · 타 리그 요약) */
 function resolveTeamBlock(
   save: CareerSave,
   rng: Rng,
   minutesLeague: number,
-  cupPlayed: boolean,
+  cupMatches: number,
 ): TeamQuarterBlock {
   const L = LEAGUE_MATCHES_PER_QUARTER
   const tier = save.playingClub.tier
@@ -177,8 +200,8 @@ function resolveTeamBlock(
     TEAM_FORM.minutesContributionCap,
     (minutesLeague / (L * 90)) * TEAM_FORM.minutesContributionCap,
   )
-  let winP = clamp(base.win + ovrBoost + minutesBoost * 0.5, 0.12, 0.62)
-  let drawP = clamp(base.draw, 0.15, 0.4)
+  const winP = clamp(base.win + ovrBoost + minutesBoost * 0.5, 0.12, 0.62)
+  const drawP = clamp(base.draw, 0.15, 0.4)
 
   let wins = 0
   let draws = 0
@@ -200,35 +223,22 @@ function resolveTeamBlock(
     else losses++
   }
 
-  const pointsAdd = wins * 3 + draws
   const nextPlayed = save.leagueTable.played + L
-  const nextPts = save.leagueTable.points + pointsAdd
+  const nextPts = save.leagueTable.points + wins * 3 + draws
   // rough rank from pts/game among ~10 tier clubs → scale to 1–20 feel
   const ppg = nextPts / Math.max(1, nextPlayed)
   const rankAfter = clamp(Math.round(21 - ppg * 12), 1, 20)
 
   let cupRoundAfter: CupRoundStatus = save.cupRound
   let cupWon = false
-  if (cupPlayed) {
+  let cupMatchesPlayed = 0
+  for (let i = 0; i < cupMatches; i++) {
+    if (cupRoundAfter === 'eliminated' || cupRoundAfter === 'winner') break
     const advance = rng.chance(0.55 + minutesBoost)
-    if (save.cupRound === 'not_entered' || save.cupRound === 'round_of_64') {
-      cupRoundAfter = advance ? 'round_of_32' : 'eliminated'
-    } else if (save.cupRound === 'eliminated' || save.cupRound === 'winner') {
-      cupRoundAfter = save.cupRound
-    } else {
-      const idx = CUP_ROUNDS.indexOf(
-        save.cupRound as (typeof CUP_ROUNDS)[number],
-      )
-      if (idx >= 0) {
-        if (!advance) cupRoundAfter = 'eliminated'
-        else if (save.cupRound === 'final') {
-          cupRoundAfter = 'winner'
-          cupWon = true
-        } else {
-          cupRoundAfter = CUP_ROUNDS[Math.min(idx + 1, CUP_ROUNDS.length - 1)]!
-        }
-      }
-    }
+    const step = advanceCupOnce(cupRoundAfter, advance)
+    cupRoundAfter = step.round
+    if (step.won) cupWon = true
+    cupMatchesPlayed++
   }
 
   return {
@@ -239,7 +249,8 @@ function resolveTeamBlock(
     goalsAgainst: ga,
     rankAfter,
     cupRoundAfter,
-    cupPlayed,
+    cupPlayed: cupMatchesPlayed > 0,
+    cupMatchesPlayed,
     cupWon,
     otherLeaguesNote:
       '타 리그(태양·운하·강철·세느)는 요약 롤만 — 플레이어 리그(북섬)만 상세 WDL.',
@@ -613,7 +624,8 @@ function accumulateSeason(
     minutes: prev.minutes + stats.minutes,
     goals: prev.goals + stats.goals,
     assists: prev.assists + stats.assists,
-    ratingSum: prev.ratingSum + stats.avgRating,
+    // 출전 없는 분기(부상·벤치)는 시즌 평균 평점에서 제외
+    ratingSum: prev.ratingSum + (stats.apps > 0 ? stats.avgRating : 0),
     ratingCount: prev.ratingCount + (stats.apps > 0 ? 1 : 0),
     league: add(prev.league, stats.league),
     cup: add(prev.cup, stats.cup),
@@ -643,17 +655,25 @@ export function resolveQuarter(
   // Step 1
   const minutes = resolveMinutes(save, rng, injuredGate)
 
-  // Step 2
-  const team = resolveTeamBlock(
-    save,
-    rng,
-    minutes.minutesLeague,
-    minutes.cupApps > 0 ||
-      (save.cupRound !== 'eliminated' && save.cupRound !== 'winner'),
-  )
+  // Step 2 — 컵은 스케줄 경기 수만큼 시도 (조기 탈락 시 실제 소화 수는 줄어듦)
+  const team = resolveTeamBlock(save, rng, minutes.minutesLeague, minutes.cupApps)
+
+  // 컵 출전 분을 실제 소화 라운드에 맞춤
+  const playedCup = team.cupMatchesPlayed
+  const alignedMinutes = {
+    ...minutes,
+    cupApps: playedCup,
+    cupStarts: Math.min(minutes.cupStarts, playedCup),
+    minutesCup:
+      playedCup === 0
+        ? 0
+        : minutes.cupApps > 0
+          ? Math.round((minutes.minutesCup * playedCup) / minutes.cupApps)
+          : 0,
+  }
 
   // Steps 3–4
-  const stats = resolvePlayerStats(save, rng, minutes, injuredGate)
+  const stats = resolvePlayerStats(save, rng, alignedMinutes, injuredGate)
 
   // Step 5
   const growth = applyGrowth(save, rng, prep.trainingFocus, stats, injuredGate)

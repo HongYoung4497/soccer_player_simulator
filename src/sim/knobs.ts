@@ -6,8 +6,19 @@
 /** 분기 리그 경기 수 L `[가정: 8~10]` */
 export const LEAGUE_MATCHES_PER_QUARTER = 9
 
+/**
+ * 분기별 컵 라운드 수 `[가정]` — 4분기에 6라운드(64강→우승)가 끝나도록 배분.
+ * 합계 6 · 분기당 최대 2 (rules: 0–2경기).
+ */
+export const CUP_ROUNDS_PER_QUARTER: Record<1 | 2 | 3 | 4, number> = {
+  1: 2,
+  2: 1,
+  3: 1,
+  4: 2,
+}
+
 /** 분기에 컵 경기가 있을 때 최대 경기 수 `[가정]` */
-export const CUP_MATCHES_MAX_PER_QUARTER = 1
+export const CUP_MATCHES_MAX_PER_QUARTER = 2
 
 /** 역할 → 리그 출전 분 목표 비율 밴드 `[가정]` */
 export const ROLE_MINUTE_BANDS = {

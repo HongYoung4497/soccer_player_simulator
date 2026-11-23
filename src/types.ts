@@ -135,6 +135,8 @@ export interface TeamQuarterBlock {
   rankAfter: number
   cupRoundAfter: CupRoundStatus
   cupPlayed: boolean
+  /** 이번 분기에 실제 소화한 컵 경기 수 (조기 탈락 시 스케줄보다 적을 수 있음) */
+  cupMatchesPlayed: number
   cupWon?: boolean
   /** 타 리그 요약 한 줄 (상세 시뮬 없음) */
   otherLeaguesNote: string
