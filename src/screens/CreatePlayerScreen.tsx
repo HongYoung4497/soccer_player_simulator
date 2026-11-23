@@ -8,6 +8,7 @@ import type {
   PreferredLeague,
   StyleTag,
 } from '../types'
+import { DEFAULT_LEAGUE, PREFERRED_LEAGUES } from '../world'
 
 const POSITIONS: PositionGroup[] = ['GK', 'DF', 'MF', 'FW']
 const STYLES: StyleTag[] = [
@@ -18,13 +19,6 @@ const STYLES: StyleTag[] = [
   '윙백',
   '스위퍼키퍼',
 ]
-const LEAGUES: PreferredLeague[] = [
-  '북섬 프리미어',
-  '태양 리그',
-  '운하 세리에',
-  '강철 분데스',
-  '세느 리그',
-]
 
 export function CreatePlayerScreen() {
   const navigate = useNavigate()
@@ -34,7 +28,7 @@ export function CreatePlayerScreen() {
   const [foot, setFoot] = useState<PlayerProfile['preferredFoot']>('오른발')
   const [position, setPosition] = useState<PositionGroup>('FW')
   const [style, setStyle] = useState<StyleTag>('포처')
-  const [league, setLeague] = useState<PreferredLeague>('북섬 프리미어')
+  const [league, setLeague] = useState<PreferredLeague>(DEFAULT_LEAGUE)
 
   const submit = () => {
     // attrs·age는 createInitialSave에서 포지션 기본값으로 채움
@@ -135,7 +129,7 @@ export function CreatePlayerScreen() {
 
       <fieldset className="chip-fieldset">
         <legend>희망 리그 감성 (입단 보장 아님)</legend>
-        {LEAGUES.map((l) => (
+        {PREFERRED_LEAGUES.map((l) => (
           <button
             key={l}
             type="button"

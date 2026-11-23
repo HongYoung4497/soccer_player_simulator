@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createInitialSave } from '../storage'
 import type { CareerSave } from '../types'
+import { DEFAULT_LEAGUE, LEAGUE_NAMES } from '../world'
 import { resolveQuarter } from './resolveQuarter'
 import { wrapSeason } from './wrapSeason'
 
@@ -12,7 +13,7 @@ function baseSave(overrides: Partial<CareerSave> = {}): CareerSave {
       preferredFoot: '오른발',
       position: 'FW',
       style: '포처',
-      preferredLeague: '북섬 프리미어',
+      preferredLeague: DEFAULT_LEAGUE,
       ovr: 68,
     },
     'guest',
@@ -39,6 +40,9 @@ describe('resolveQuarter', () => {
     expect(stats.league.apps + stats.cup.apps).toBe(stats.apps)
     expect(team.wins + team.draws + team.losses).toBe(9)
     expect(summaryLine).toContain('1분기')
+    expect(team.otherLeaguesNote).toContain(LEAGUE_NAMES.ES)
+    expect(team.otherLeaguesNote).toContain(DEFAULT_LEAGUE)
+    expect(team.otherLeaguesNote).not.toMatch(/태양|운하|강철|세느/)
     expect(nextSave.lastQuarterResult).not.toBeNull()
     expect(nextSave.careerApps).toBe(save.careerApps + stats.apps)
     expect(nextSave.player.attrs.finishing).toBeGreaterThanOrEqual(

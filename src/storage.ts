@@ -6,6 +6,11 @@ import type {
   PlayerProfile,
   SeasonAccum,
 } from './types'
+import {
+  DEFAULT_CUP,
+  DEFAULT_LEAGUE,
+  normalizePreferredLeague,
+} from './world'
 
 const SAVE_KEY = 'jersey-rebirth-career-v1'
 const AUTH_KEY = 'jersey-rebirth-auth-mode-v1'
@@ -54,29 +59,29 @@ export function emptySeasonAccum(): SeasonAccum {
   }
 }
 
-/** 샘플 페르소나 — 페이퍼 프로토 가정명 */
+/** 샘플 페르소나 — 페이퍼 프로토 가정명 (북섬 · 왕실 방패) */
 export const SAMPLE_PARENT: CareerSave['parentClub'] = {
   id: 'harbourlight-fc',
   name: '하버라이트 FC',
   tier: 1,
-  league: '북섬 프리미어',
-  cup: '왕실 방패',
+  league: DEFAULT_LEAGUE,
+  cup: DEFAULT_CUP,
 }
 
 export const SAMPLE_LOAN: CareerSave['playingClub'] = {
   id: 'milbrook-united',
   name: '밀브룩 유나이티드',
   tier: 2,
-  league: '북섬 프리미어',
-  cup: '왕실 방패',
+  league: DEFAULT_LEAGUE,
+  cup: DEFAULT_CUP,
 }
 
 export const SAMPLE_TRANSFER: CareerSave['playingClub'] = {
   id: 'saint-harbour-city',
   name: '세인트 하버 시티',
   tier: 1,
-  league: '북섬 프리미어',
-  cup: '왕실 방패',
+  league: DEFAULT_LEAGUE,
+  cup: DEFAULT_CUP,
 }
 
 function newCareerSeed(): string {
@@ -93,6 +98,8 @@ function migrateToV2(raw: Record<string, unknown>): CareerSave | null {
     const style = playerRaw.style ?? '포처'
     const ovr = playerRaw.ovr ?? 68
     const attrs = playerRaw.attrs ?? defaultAttrs(position, style, ovr)
+    const preferredLeague =
+      normalizePreferredLeague(playerRaw.preferredLeague) ?? DEFAULT_LEAGUE
 
     const parent = (raw.parentClub as CareerSave['parentClub']) ?? SAMPLE_PARENT
     const playing = (raw.playingClub as CareerSave['playingClub']) ?? parent
@@ -103,6 +110,7 @@ function migrateToV2(raw: Record<string, unknown>): CareerSave | null {
       careerSeed: (raw.careerSeed as string) ?? newCareerSeed(),
       player: {
         ...playerRaw,
+        preferredLeague,
         position,
         style,
         ovr,
@@ -113,15 +121,18 @@ function migrateToV2(raw: Record<string, unknown>): CareerSave | null {
         id: parent.id ?? 'harbourlight-fc',
         name: parent.name,
         tier: parent.tier,
-        league: parent.league,
-        cup: parent.cup,
+        league: normalizePreferredLeague(parent.league) ?? parent.league ?? DEFAULT_LEAGUE,
+        cup: parent.cup || DEFAULT_CUP,
       },
       playingClub: {
         id: playing.id ?? parent.id ?? 'harbourlight-fc',
         name: playing.name,
         tier: playing.tier,
-        league: playing.league,
-        cup: playing.cup,
+        league:
+          normalizePreferredLeague(playing.league) ??
+          playing.league ??
+          DEFAULT_LEAGUE,
+        cup: playing.cup || DEFAULT_CUP,
       },
       onLoan: Boolean(raw.onLoan),
       loanEndsAfterSeason: Boolean(raw.loanEndsAfterSeason ?? raw.onLoan),

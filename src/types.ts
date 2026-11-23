@@ -1,17 +1,15 @@
 /** MVP 게임 상태 — 분기 시뮬 엔진 연동 */
 
+import type { PreferredLeague as WorldPreferredLeague } from './world/leagues'
+
 export type AuthMode = 'guest' | 'google' | 'kakao' | null
 
 export type PositionGroup = 'GK' | 'DF' | 'MF' | 'FW'
 
 export type Role = 'unused' | 'rotation' | 'starter' | 'key'
 
-export type PreferredLeague =
-  | '북섬 프리미어'
-  | '태양 리그'
-  | '운하 세리에'
-  | '강철 분데스'
-  | '세느 리그'
+/** @see src/world/leagues.ts — 5리그 페르소나 잠금명 */
+export type PreferredLeague = WorldPreferredLeague
 
 export type StyleTag =
   | '포처'

@@ -9,6 +9,11 @@ import type {
   TeamQuarterBlock,
   TrainingFocus,
 } from '../types'
+import {
+  DEFAULT_LEAGUE,
+  normalizePreferredLeague,
+  otherLeaguesSummaryNote,
+} from '../world'
 import { ATTR_LABEL_KO, TRAINING_ATTR, recomputeOvr } from './attrs'
 import {
   formatQuarterSummary,
@@ -252,8 +257,9 @@ function resolveTeamBlock(
     cupPlayed: cupMatchesPlayed > 0,
     cupMatchesPlayed,
     cupWon,
-    otherLeaguesNote:
-      '타 리그(태양·운하·강철·세느)는 요약 롤만 — 플레이어 리그(북섬)만 상세 WDL.',
+    otherLeaguesNote: otherLeaguesSummaryNote(
+      normalizePreferredLeague(save.playingClub.league) ?? DEFAULT_LEAGUE,
+    ),
   }
 }
 

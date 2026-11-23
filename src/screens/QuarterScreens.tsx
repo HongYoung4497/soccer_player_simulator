@@ -105,7 +105,7 @@ export function QuarterResultScreen() {
 
   return (
     <main className="screen screen--flow">
-      <h1 className="screen-heading">{save?.quarterIndex ?? 1}분기 성적표</h1>
+      <h1 className="screen-heading">{save?.quarterIndex ?? 1}분기 결산</h1>
       <p className="essay">
         {save?.lastQuarterSummary ?? '아직 해상된 분기 결과가 없습니다.'}
       </p>
