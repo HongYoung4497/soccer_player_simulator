@@ -29,6 +29,10 @@ export function CareerTab() {
           <dd>{save.careerGoals}</dd>
         </div>
         <div>
+          <dt>통산 도움</dt>
+          <dd>{save.careerAssists}</dd>
+        </div>
+        <div>
           <dt>시즌</dt>
           <dd>
             {save.seasonYear} · {save.quarterIndex}분기
@@ -40,14 +44,19 @@ export function CareerTab() {
         <p className="soft-block__label">최근 흐름</p>
         <p>
           {save.lastQuarterSummary ??
-            '주전 분기 → 임대 적응 → 부상 → 복귀 — 아직 샘플 문장입니다.'}
+            '아직 첫 분기 성적표가 없습니다. 시즌 탭에서 준비를 열어 보세요.'}
         </p>
       </div>
 
-      <div className="soft-block">
-        <p className="soft-block__label">업적 (스텁)</p>
-        <p>첫 골 · 첫 풀타임 · 티어 사다리 — 배지 시스템은 이후 단계.</p>
-      </div>
+      {save.seasonAccum.apps > 0 && (
+        <div className="soft-block">
+          <p className="soft-block__label">이번 시즌</p>
+          <p>
+            출전 {save.seasonAccum.apps} · 골 {save.seasonAccum.goals} · 도움{' '}
+            {save.seasonAccum.assists}
+          </p>
+        </div>
+      )}
     </section>
   )
 }

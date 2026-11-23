@@ -1,12 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useGame } from '../gameContext'
-
-const ROLE_KO = {
-  unused: '미사용',
-  rotation: '로테이션',
-  starter: '주전',
-  key: '핵심',
-} as const
+import { ROLE_KO } from '../sim'
 
 export function SeasonTab() {
   const navigate = useNavigate()
@@ -52,6 +46,8 @@ export function SeasonTab() {
       <p className="muted-line">
         역할 {ROLE_KO[save.role]}
         {save.onLoan ? ' · 임대 중' : ''}
+        {save.injury.type !== 'none' ? ' · 부상 중' : ''}
+        {' · '}리그 {save.leagueTable.rank}위 · {save.leagueTable.points}점
       </p>
 
       <div className="cta-stack">
@@ -62,19 +58,21 @@ export function SeasonTab() {
         >
           이번 분기 준비
         </button>
-        <button
-          type="button"
-          className="btn btn--ghost"
-          onClick={() => navigate('/season-wrap')}
-        >
-          시즌 결산 미리보기
-        </button>
+        {save.quarterIndex === 4 && save.lastQuarterResult && (
+          <button
+            type="button"
+            className="btn btn--ghost"
+            onClick={() => navigate('/season-wrap')}
+          >
+            시즌 결산
+          </button>
+        )}
         <button
           type="button"
           className="btn btn--text"
           onClick={() => navigate('/retire')}
         >
-          은퇴·리캡 (스텁)
+          은퇴·리캡
         </button>
       </div>
     </section>

@@ -1,11 +1,13 @@
 import { useGame } from '../gameContext'
+import { ATTR_LABEL_KO, ROLE_KO } from '../sim'
+import type { AttrKey } from '../types'
 
-const ROLE_KO = {
-  unused: '미사용',
-  rotation: '로테이션',
-  starter: '주전',
-  key: '핵심',
-} as const
+const SHOW_ATTRS: Record<string, AttrKey[]> = {
+  FW: ['finishing', 'positioning', 'speed', 'stamina', 'mental'],
+  MF: ['passing', 'vision', 'pressing', 'stamina', 'footballIQ'],
+  DF: ['tackling', 'marking', 'aerial', 'positioning', 'mental'],
+  GK: ['shotStopping', 'command', 'buildup', 'mental', 'footballIQ'],
+}
 
 export function PlayerTab() {
   const { save } = useGame()
@@ -18,14 +20,16 @@ export function PlayerTab() {
     )
   }
 
-  const { player, parentClub, playingClub, onLoan, role } = save
+  const { player, parentClub, playingClub, onLoan, role, fitness, form, injury } =
+    save
+  const keys = SHOW_ATTRS[player.position] ?? SHOW_ATTRS.FW
 
   return (
     <section className="tab-panel">
       <h1 className="screen-heading">지금의 나</h1>
       <p className="essay">
-        {player.name} · #{player.shirtNumber} {player.position} ·{' '}
-        {player.style}
+        {player.name} · #{player.shirtNumber} {player.position} · {player.style}{' '}
+        · {player.age}세
       </p>
 
       <dl className="stat-list">
@@ -41,7 +45,26 @@ export function PlayerTab() {
           <dt>역할</dt>
           <dd>{ROLE_KO[role]}</dd>
         </div>
+        <div>
+          <dt>컨디션</dt>
+          <dd>{fitness}</dd>
+        </div>
+        <div>
+          <dt>폼</dt>
+          <dd>
+            {form > 0 ? `+${form}` : form}
+          </dd>
+        </div>
       </dl>
+
+      {injury.type !== 'none' && (
+        <div className="soft-block">
+          <p className="soft-block__label">부상</p>
+          <p>
+            {injury.type} · 남은 분기 {injury.quartersLeft}
+          </p>
+        </div>
+      )}
 
       <div className="soft-block">
         <p className="soft-block__label">소속 {onLoan ? '(임대 중)' : ''}</p>
@@ -51,7 +74,8 @@ export function PlayerTab() {
               본대 <strong>{parentClub.name}</strong> (계약)
             </p>
             <p>
-              임대 <strong>{playingClub.name}</strong> (시즌 종료까지 · 주전)
+              임대 <strong>{playingClub.name}</strong> (시즌 종료까지 ·{' '}
+              {ROLE_KO[save.promisedRole ?? role]})
             </p>
           </>
         ) : (
@@ -62,11 +86,15 @@ export function PlayerTab() {
       </div>
 
       <div className="soft-block">
-        <p className="soft-block__label">세부 능력 (스텁)</p>
-        <p>
-          마무리 · 위치선정 · 스피드 · 체력 · 멘탈 — 수치 밸런스는 분기 엔진과
-          함께.
-        </p>
+        <p className="soft-block__label">세부 능력</p>
+        <dl className="stat-list">
+          {keys.map((k) => (
+            <div key={k}>
+              <dt>{ATTR_LABEL_KO[k]}</dt>
+              <dd>{Math.round(player.attrs[k])}</dd>
+            </div>
+          ))}
+        </dl>
       </div>
     </section>
   )

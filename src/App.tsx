@@ -7,9 +7,7 @@ import { CreatePlayerScreen } from './screens/CreatePlayerScreen'
 import { HistoryTab } from './screens/HistoryTab'
 import { PlayerTab } from './screens/PlayerTab'
 import {
-  EventInjuryScreen,
-  EventLoanScreen,
-  EventRoleScreen,
+  EventQueueScreen,
   QuarterPrepScreen,
   QuarterProgressScreen,
   QuarterResultScreen,
@@ -44,9 +42,8 @@ export default function App() {
             <Route path="/quarter/prep" element={<QuarterPrepScreen />} />
             <Route path="/quarter/progress" element={<QuarterProgressScreen />} />
             <Route path="/quarter/result" element={<QuarterResultScreen />} />
-            <Route path="/events/role" element={<EventRoleScreen />} />
-            <Route path="/events/loan" element={<EventLoanScreen />} />
-            <Route path="/events/injury" element={<EventInjuryScreen />} />
+            <Route path="/events/queue" element={<EventQueueScreen />} />
+            <Route path="/events/*" element={<EventQueueScreen />} />
             <Route path="/season-wrap" element={<SeasonWrapScreen />} />
             <Route path="/retire" element={<RetireScreen />} />
             <Route path="/squad" element={<SquadScreen />} />

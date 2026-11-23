@@ -6,7 +6,16 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { AuthMode, CareerSave, PlayerProfile, TrainingFocus } from './types'
+import { resolveQuarter } from './sim/resolveQuarter'
+import { wrapSeason } from './sim/wrapSeason'
+import type {
+  AuthMode,
+  CareerSave,
+  GameEvent,
+  PlayerProfile,
+  Role,
+  TrainingFocus,
+} from './types'
 import {
   archiveToSquad,
   clearSave,
@@ -18,8 +27,11 @@ import {
   persistPendingAuth,
   persistSave,
   SAMPLE_LOAN,
-  SAMPLE_PARENT,
+  SAMPLE_TRANSFER,
 } from './storage'
+
+type StartPlayer = Omit<PlayerProfile, 'attrs' | 'age'> &
+  Partial<Pick<PlayerProfile, 'attrs' | 'age'>>
 
 interface GameContextValue {
   save: CareerSave | null
@@ -27,15 +39,18 @@ interface GameContextValue {
   pendingAuth: AuthMode
   lastTraining: TrainingFocus | null
   setPendingAuth: (mode: AuthMode) => void
-  startCareer: (player: PlayerProfile) => void
+  startCareer: (player: StartPlayer) => void
   continueCareer: () => boolean
   touchSave: (updater: (prev: CareerSave) => CareerSave) => void
-  runQuarterStub: (focus: TrainingFocus) => void
-  acceptRoleOffer: (accept: boolean) => void
-  acceptLoan: (accept: boolean) => void
-  /** 이벤트 큐 종료 시 분기 진행. Q4면 season-wrap으로 */
-  completeEventQueue: () => 'season' | 'season-wrap'
-  wrapSeasonStub: () => void
+  runQuarter: (focus: TrainingFocus) => void
+  currentEvent: GameEvent | null
+  /** 선택/확인 후 남은 큐·라우트. sync persist. */
+  resolveCurrentEvent: (
+    choice: 'accept' | 'decline' | 'ack',
+  ) => 'continue' | 'season' | 'season-wrap'
+  wrapSeasonAndAdvance: () => void
+  /** 이벤트 없이 결과→홈/결산 */
+  finishQuarterWithoutEvents: () => 'season' | 'season-wrap'
   retireAndStore: () => void
   simulateConflictLogin: (mode: 'google' | 'kakao') => boolean
   resolveConflict: (keep: 'device' | 'account') => void
@@ -43,6 +58,26 @@ interface GameContextValue {
 }
 
 const GameContext = createContext<GameContextValue | null>(null)
+
+function stamp(save: CareerSave): CareerSave {
+  return { ...save, savedAt: new Date().toISOString() }
+}
+
+function advanceAfterQueue(save: CareerSave): {
+  save: CareerSave
+  route: 'season' | 'season-wrap'
+} {
+  if (save.quarterIndex >= 4) {
+    return { save, route: 'season-wrap' }
+  }
+  return {
+    save: stamp({
+      ...save,
+      quarterIndex: (save.quarterIndex + 1) as 1 | 2 | 3 | 4,
+    }),
+    route: 'season',
+  }
+}
 
 export function GameProvider({ children }: { children: ReactNode }) {
   const [save, setSave] = useState<CareerSave | null>(() => loadSave())
@@ -52,22 +87,21 @@ export function GameProvider({ children }: { children: ReactNode }) {
   )
   const [lastTraining, setLastTraining] = useState<TrainingFocus | null>(null)
 
+  const commit = useCallback((next: CareerSave) => {
+    const stamped = stamp(next)
+    persistSave(stamped)
+    setSave(stamped)
+    return stamped
+  }, [])
+
   const setPendingAuth = useCallback((mode: AuthMode) => {
     persistPendingAuth(mode)
     setPendingAuthState(mode)
   }, [])
 
-  const commit = useCallback((next: CareerSave) => {
-    const stamped = { ...next, savedAt: new Date().toISOString() }
-    persistSave(stamped)
-    setSave(stamped)
-  }, [])
-
   const startCareer = useCallback(
-    (player: PlayerProfile) => {
-      const mode = pendingAuth ?? 'guest'
-      // 활성 커리어만 교체 — 선수단(squad) 아카이브는 유지
-      commit(createInitialSave(player, mode))
+    (player: StartPlayer) => {
+      commit(createInitialSave(player, pendingAuth ?? 'guest'))
     },
     [commit, pendingAuth],
   )
@@ -81,99 +115,120 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const touchSave = useCallback(
     (updater: (prev: CareerSave) => CareerSave) => {
-      setSave((prev) => {
-        if (!prev) return prev
-        const next = updater(prev)
-        const stamped = { ...next, savedAt: new Date().toISOString() }
-        persistSave(stamped)
-        return stamped
-      })
+      const prev = loadSave()
+      if (!prev) return
+      commit(updater(prev))
+    },
+    [commit],
+  )
+
+  const runQuarter = useCallback(
+    (focus: TrainingFocus) => {
+      setLastTraining(focus)
+      const prev = loadSave()
+      if (!prev) return
+      const { nextSave } = resolveQuarter(prev, { trainingFocus: focus })
+      commit(nextSave)
+    },
+    [commit],
+  )
+
+  const currentEvent = save?.pendingEvents[0] ?? null
+
+  const applyEventChoice = useCallback(
+    (prev: CareerSave, choice: 'accept' | 'decline' | 'ack'): CareerSave => {
+      const ev = prev.pendingEvents[0]
+      const rest = prev.pendingEvents.slice(1)
+      let next: CareerSave = { ...prev, pendingEvents: rest }
+
+      if (!ev) return next
+
+      if (ev.type === 'ROLE_OFFER' && choice === 'accept' && ev.toRole) {
+        next = { ...next, role: ev.toRole, promisedRole: null }
+      }
+
+      if (ev.type === 'LOAN_OFFER' && choice === 'accept') {
+        next = {
+          ...next,
+          onLoan: true,
+          loanEndsAfterSeason: true,
+          playingClub: {
+            ...SAMPLE_LOAN,
+            id: ev.toClubId ?? SAMPLE_LOAN.id,
+            name: ev.toClub ?? SAMPLE_LOAN.name,
+            tier: ev.tier ?? 2,
+          },
+          role: ev.promisedRole ?? 'starter',
+          promisedRole: ev.promisedRole ?? 'starter',
+        }
+      }
+
+      if (ev.type === 'TRANSFER_OFFER' && choice === 'accept') {
+        const club = {
+          ...SAMPLE_TRANSFER,
+          id: ev.toClubId ?? SAMPLE_TRANSFER.id,
+          name: ev.toClub ?? SAMPLE_TRANSFER.name,
+          tier: (ev.tier as 1 | 2 | 3) ?? 1,
+        }
+        next = {
+          ...next,
+          onLoan: false,
+          loanEndsAfterSeason: false,
+          parentClub: club,
+          playingClub: club,
+          role: (ev.promisedRole as Role) ?? 'rotation',
+          promisedRole: null,
+          contractYearsLeft: ev.years ?? 3,
+        }
+      }
+
+      // INJURY / RECOVERED / decline: 큐만 소비 (부상 상태는 해상 시 이미 반영)
+      return next
     },
     [],
   )
 
-  const runQuarterStub = useCallback(
-    (focus: TrainingFocus) => {
-      setLastTraining(focus)
-      touchSave((prev) => ({
-        ...prev,
-        careerApps: prev.careerApps + 7,
-        careerGoals: prev.careerGoals + 1,
-        lastQuarterSummary: `${prev.quarterIndex}분기 · 출전 7 (선발 2) · 골 1 · 도움 0 · 평균 평점 6.4 · 팀 5위권 · 왕실 방패 32강 대기`,
-      }))
-    },
-    [touchSave],
-  )
-
-  const acceptRoleOffer = useCallback(
-    (accept: boolean) => {
-      if (accept) touchSave((prev) => ({ ...prev, role: 'starter' }))
-    },
-    [touchSave],
-  )
-
-  const acceptLoan = useCallback(
-    (accept: boolean) => {
-      if (!accept) return
-      touchSave((prev) => ({
-        ...prev,
-        onLoan: true,
-        playingClub: SAMPLE_LOAN,
-        role: 'starter',
-      }))
-    },
-    [touchSave],
-  )
-
-  const completeEventQueue = useCallback((): 'season' | 'season-wrap' => {
-    let nextRoute: 'season' | 'season-wrap' = 'season'
-    setSave((prev) => {
-      if (!prev) return prev
-      if (prev.quarterIndex >= 4) {
-        nextRoute = 'season-wrap'
-        return prev
+  const resolveCurrentEvent = useCallback(
+    (choice: 'accept' | 'decline' | 'ack'): 'continue' | 'season' | 'season-wrap' => {
+      const prev = loadSave()
+      if (!prev) return 'season'
+      const afterChoice = applyEventChoice(prev, choice)
+      if (afterChoice.pendingEvents.length > 0) {
+        commit(afterChoice)
+        return 'continue'
       }
-      const advanced: CareerSave = {
-        ...prev,
-        quarterIndex: (prev.quarterIndex + 1) as 1 | 2 | 3 | 4,
-        savedAt: new Date().toISOString(),
-      }
-      persistSave(advanced)
-      return advanced
-    })
-    return nextRoute
-  }, [])
+      const { save: advanced, route } = advanceAfterQueue(afterChoice)
+      commit(advanced)
+      return route
+    },
+    [applyEventChoice, commit],
+  )
 
-  const wrapSeasonStub = useCallback(() => {
-    touchSave((prev) => ({
-      ...prev,
-      quarterIndex: 1,
-      seasonYear: prev.seasonYear + 1,
-      onLoan: false,
-      playingClub: SAMPLE_PARENT,
-      role: 'rotation',
-      historyLines: [
-        ...prev.historyLines,
-        `${prev.seasonYear} 북섬 프리미어 7위 · 왕실 방패 16강`,
-      ],
-      lastQuarterSummary: `${prev.seasonYear} 시즌 결산 — 출전 22 · 골 5 · 도움 2 · 평점 6.7`,
-    }))
-  }, [touchSave])
+  const finishQuarterWithoutEvents = useCallback((): 'season' | 'season-wrap' => {
+    const prev = loadSave()
+    if (!prev) return 'season'
+    const cleared = { ...prev, pendingEvents: [] as GameEvent[] }
+    const { save: advanced, route } = advanceAfterQueue(cleared)
+    commit(advanced)
+    return route
+  }, [commit])
+
+  const wrapSeasonAndAdvance = useCallback(() => {
+    const prev = loadSave()
+    if (!prev) return
+    const { nextSave } = wrapSeason(prev)
+    commit(nextSave)
+  }, [commit])
 
   const retireAndStore = useCallback(() => {
-    if (!save) return
-    const retired: CareerSave = {
-      ...save,
-      retired: true,
-      savedAt: new Date().toISOString(),
-    }
-    // 선수단은 별도 localStorage 키 — 새 인생이 활성 세이브를 덮어도 보관 유지
+    const prev = loadSave()
+    if (!prev) return
+    const retired = stamp({ ...prev, retired: true })
     setSquad(archiveToSquad(retired))
     persistSave(retired)
     setSave(retired)
-  }, [save])
+  }, [])
 
-  /** 충돌 화면 데모: 이미 게스트 세이브가 있으면 conflict로 유도 */
   const simulateConflictLogin = useCallback(
     (mode: 'google' | 'kakao') => {
       const existing = loadSave()
@@ -185,15 +240,16 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const resolveConflict = useCallback(
     (keep: 'device' | 'account') => {
-      if (keep === 'device' && save) {
-        commit({ ...save, authMode: pendingAuth ?? 'google' })
+      if (keep === 'device') {
+        const prev = loadSave()
+        if (prev) commit({ ...prev, authMode: pendingAuth ?? 'google' })
       }
       if (keep === 'account') {
         clearSave()
         setSave(null)
       }
     },
-    [commit, pendingAuth, save],
+    [commit, pendingAuth],
   )
 
   const resetAll = useCallback(() => {
@@ -216,11 +272,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
       startCareer,
       continueCareer,
       touchSave,
-      runQuarterStub,
-      acceptRoleOffer,
-      acceptLoan,
-      completeEventQueue,
-      wrapSeasonStub,
+      runQuarter,
+      currentEvent,
+      resolveCurrentEvent,
+      wrapSeasonAndAdvance,
+      finishQuarterWithoutEvents,
       retireAndStore,
       simulateConflictLogin,
       resolveConflict,
@@ -235,11 +291,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
       startCareer,
       continueCareer,
       touchSave,
-      runQuarterStub,
-      acceptRoleOffer,
-      acceptLoan,
-      completeEventQueue,
-      wrapSeasonStub,
+      runQuarter,
+      currentEvent,
+      resolveCurrentEvent,
+      wrapSeasonAndAdvance,
+      finishQuarterWithoutEvents,
       retireAndStore,
       simulateConflictLogin,
       resolveConflict,
