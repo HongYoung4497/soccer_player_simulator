@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { GuestSaveChip } from '../components/GuestSaveChip'
 import { useGame } from '../gameContext'
 import { formatCupResult } from '../sim'
+import { DEFAULT_CUP, DEFAULT_LEAGUE } from '../world'
 
 export function SeasonWrapScreen() {
   const navigate = useNavigate()
@@ -13,8 +14,8 @@ export function SeasonWrapScreen() {
   // 이전 시즌 wrap이 남아 있어도, 방금 마친 시즌(현재 seasonYear)과 연도가 같을 때만 사용
   const wrap = stored?.year === year ? stored : null
 
-  const leagueName = wrap?.leagueName ?? save?.playingClub.league ?? '북섬 프리미어'
-  const cupName = wrap?.cupName ?? save?.playingClub.cup ?? '왕실 방패'
+  const leagueName = wrap?.leagueName ?? save?.playingClub.league ?? DEFAULT_LEAGUE
+  const cupName = wrap?.cupName ?? save?.playingClub.cup ?? DEFAULT_CUP
   const rank = wrap?.teamRank ?? table?.rank ?? 10
   const apps = wrap?.playerApps ?? accum?.apps ?? 0
   const goals = wrap?.playerGoals ?? accum?.goals ?? 0
