@@ -37,7 +37,8 @@ export function CreatePlayerScreen() {
   const [league, setLeague] = useState<PreferredLeague>('북섬 프리미어')
 
   const submit = () => {
-    const player: PlayerProfile = {
+    // attrs·age는 createInitialSave에서 포지션 기본값으로 채움
+    const player: Omit<PlayerProfile, 'attrs' | 'age'> = {
       name: name.trim() || '이름 없는 선수',
       shirtNumber: Math.min(99, Math.max(1, shirtNumber)),
       preferredFoot: foot,
